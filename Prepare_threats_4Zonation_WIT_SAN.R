@@ -1,19 +1,4 @@
-### This file prepares the threat layers for Zonation. Exactly what is needed will
-# depend on the threat but the output layer will be a raster of wetlands with 
-# a scaled threat value between 0 (no threat) and 1 (maximum threat) 
 
-#Created 14 Nov 2023 - adapted to WIT data based on Prepare_threats_4Zonation.R
-# Last updated 21 Nov 2023 - removed CIs, made sure new results sent to 
-# C:/Data/AAAMoore/R/Wetland_Indices/PilotV4
-#append _WIT to the _raster threat outputs
-
-# CIs were CIs of bootstrapped null model not the CIs of the stress index.  
-# UMelb team are going to look into that later but in the meantime the stress index is ok. 
-
-# 15 Nov 2023 - WILL NEED TO RERUN WHEN STRESS DATA UPDATED (CIs ARE WRONG) 
-#ALSO CHECK THAT writes to correct place etc.  I've decided to keep in 
-# original R project and call WIT stress index PilotV4
-# 19 Dec 2023 - Reran with the correct confidence intervals - overworte stuff in PilotV4
 
 library(tidyverse)
 library(sf)
