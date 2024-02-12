@@ -186,29 +186,23 @@ condlayers=list.files("O:/SAN_Projects/WaterwaysValuesThreats/Waterway Risk Pilo
 
 condLU=data.frame(index=1:length(condlayers),norm=0,filename=condlayers)
 
-##NEED LU table to link species to appropriate condLU index number, fow now assume all 1 (type 2 impact curves in all asset types)
+##Make Feature list file
 
-condlinks=rep(1,length(hdmfiles))
+hdmfiles=list.files(hdm_out_directory,full.names=T)
+SppNames=gsub(".tif$","",gsub(".*Spp","Spp",hdmfiles))
+SppCodes=as.numeric(gsub("Spp","",SppNames))
 
-write.table(condLU, file=file.path(zfiles_directory,paste0(threat_in,"_CondLinks.txt")), row.names = F,col.names=F)
+full_list <- read.csv("O:/SAN_Projects/WaterwaysValuesThreats/Waterway Risk Pilot/HDM_models_species_Appendix1plus.csv")
 
+full_list$Group=gsub("_.*","",full_list$AVIRA_group)
+output_group <- unique(full_list$Group)
 
-######
+groupnums=match(full_list$Group[match(SppCodes,full_list$Taxon_ID)],output_group)
 
-blank <- rep(-1,length(filenames))
-taxongroup <- data.frame(blank)
-taxongroup$blank <- included_list$Group
-taxongroup <- taxongroup %>% mutate(blank=case_when(grepl("Amphibians", blank)~1,
-                                                    grepl("Birds", blank)~2,
-                                                    grepl("Reptiles", blank)~3,
-                                                    grepl("Plants", blank)~4,
-                                                    grepl("Fish", blank)~5,
-                                                    grepl("Inverts", blank)~6,
-                                                    grepl("Other", blank)~7,
-                                                    ))
-group <- taxongroup$blank
+associations=full_list$hydro_stress_assoc[match(SppCodes,full_list$Taxon_ID)]
+conlink=ifelse(is.na(associations),-1,ifelse(associations=="med",4,1))
 
-Feature_list <- data.frame(weight=1, filename=hdmfiles, group=1, condition=1,name=SppNames,tr_out=1)
+Feature_list <- data.frame(weight=1, filename=hdmfiles, group=groupnums, condition=conlink,name=SppNames,tr_out=1)
 
 write.table(Feature_list, file="O:/SAN_Projects/WaterwaysValuesThreats/Waterway Risk Pilot/Zonation/feature_list.txt", row.names = F)
 
@@ -239,11 +233,12 @@ tr_dir=file.path(zfiles_directory,"Outputs",runname,"transformed_layers")
 rankfile=file.path(zfiles_directory,"Outputs",runname,"rankmap.tif")
 
 hdmfiles=list.files(tr_dir,full.names=T,pattern=".tif$")
-shortnames <- gsub(".tif$","",gsub(".*Spp","Spp",hdmfiles))
-codes=as.numeric(gsub("Spp","",shortnames))
-SppNames=gsub(".tif$","",gsub(".*Spp","Spp",hdmfiles))
+SppNames <- gsub(".layer.*$","",gsub(".*Spp","Spp",hdmfiles))
+SppCodes=as.numeric(gsub("Spp","",SppNames))
 
-Feature_list_load <- data.frame(weight=1, filename=hdmfiles, group=1, name=SppNames)
+groupnums=match(full_list$Group[match(SppCodes,full_list$Taxon_ID)],output_group)
+
+Feature_list_load <- data.frame(weight=1, filename=hdmfiles, group=groupnums, name=SppNames)
 
 write.table(Feature_list_load, file="O:/SAN_Projects/WaterwaysValuesThreats/Waterway Risk Pilot/Zonation/feature_list_load.txt", row.names = F)
 
