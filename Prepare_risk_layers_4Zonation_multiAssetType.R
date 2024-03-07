@@ -1,8 +1,10 @@
-### This file prepares the risk (threat*biodiversity) layers for Zonation.
-## and writes the necessary files. This code uses threat layers prepared by 
-## "Prepare_threats_4zonation_WIT.R"
+### This file prepares the species-specific risk layers for integrated risk assessment
+### It requires:
+### 1. One or more threat layers (e.g. created with "Prepare_threats_4zonation_WIT.R") corresponding to a specific threat type
+### 2. A species X Threat-Impact curve lookup table relevant to the above threat, and other species information (taxon group, conservation listings etc) and 
+### 3. A directory where appropriately masked and thresholded HDMs are stored (don't need to masked to waterbodies, just to known distribution extents).
 
-
+##load packages 
 
 library(tidyverse)
 library(sf)
@@ -11,51 +13,14 @@ library(terra)
 library(mapview)
 library(doParallel)
 
-#impact curve function
+##load custom functions
+source("Functions for waterway risk assessment calculations.R")
 
 
-impactcurve<-function(tval,mu=0.5,beta=0.1,M=1,Y=3.5,B=1/(1+exp(mu/beta)),C=(1+exp(-(1-mu)/beta))/(1-B*(1+exp(-(1-mu)/beta)))){
-  ifelse(tval>=Y, M, M*C*(1/(1+exp(-(tval/Y-mu)/beta))-B))
-}
-
-#function to apply impact curve function to a raster
-
-threatToCond<-function(inval,type=2,mu.val=0.5,beta.val=0.1,M.val=1,Y.val=3.5){
-  if(type==1){mu.val=0;beta.val=0.1;M.val=1;Y.val=3.5}
-  if(type==3){mu.val=1;beta.val=1;M.val=1;Y.val=3.5}
-  if(type==4){mu.val=1;beta.val=0.1;M.val=1;Y.val=3.5}
-  impactcurve(tval=inval,mu=mu.val,beta=beta.val,M=M.val,Y=Y.val)
-}
-  
-
-
-#absolute of negative stress values only
-
-absStress<-function(stress,posneg="neg"){   #posneg='neg' to make positive stress zero, posneg='pos' to make negative stress zero
-  stressout=abs(stress)
-  if(posneg=="neg"){stressout=stressout*(stress<0)}
-  if(posneg=="pos"){stressout=stressout*(stress>0)}
-  stressout
-}
-
-#########################################################################################
-## Define output groups
-########################################################################################
-
-
- output_group <- c("Plants", "Birds", "Amphibians","Reptiles","Fish","Inverts","Other")  #Options are: "Herps", "Plants", "Birds", "Aquatic", c("Herps", "Plants", "Birds", "Aquatic")
- output_label <- "All"
-
-# output_group <- "Herps"
-# output_label <- "Herps"
- 
-
- 
-
-
-#########################################################################################
-## Read in the threat layer(s) 
-########################################################################################
+###############################################################################################################################
+## Read in the threat layer
+## Assumes there are 3 threat layers: one for each asset type (can use dummy zero value rasters if not applicable in some types)
+################################################################################################################################
 
 threat_in <-"HydroStress_dry"
 threat_out<- threat_in
@@ -63,27 +28,38 @@ threat_in_wetland <- paste0(threat_in,"_raster_wetland.tif")
 threat_in_reach <- paste0(threat_in,"_raster_reach.tif")
 threat_in_estuary <- paste0(threat_in,"_raster_estuary.tif")  
 
-
+##where are input (threat and waterbody mask) layers?
 in_directory<-"O:/SAN_Projects/WaterwaysValuesThreats/Waterway Risk Pilot/Data/"
+
+##where should risk layers be saved?
 out_directory <-"O:/SAN_Projects/WaterwaysValuesThreats/Waterway Risk Pilot/Data/"
 dir.create(file.path(out_directory,"ConditionLayers"))
 dir.create(file.path(out_directory,"HDMs"))
+
+### read in threat layers
+## Currently reads in 'raw' threat layers and rescales them (so that wetland and reach hydro stress have same scale)
+## Should prob do rescaling elsewhere and read in scaled threat maps (if any scaling needed)
 
 wetland_threat_raw <- terra::rast(file.path(in_directory, threat_in_wetland))
 reach_threat_raw <- terra::rast(file.path(in_directory, threat_in_reach))
 estuary_threat_raw <- terra::rast(file.path(in_directory, threat_in_estuary))
 
+##
 wbody_rast <- terra::rast(paste0(in_directory, "Waterbodies_raster.tif"))
 
 #stress to condition (via impact curve):
+#
 wetland_threat_scaled<-app(wetland_threat_raw,absStress)
-reach_threat_scaled<-4*(10-reach_threat_raw)/10 
+reach_threat_scaled<-4*(10-reach_threat_raw)/10 # this is rescaling the stream hydro stress to be on same scale as wetland stress 
 
 writeRaster(wetland_threat_scaled,file=file.path(out_directory,paste0(threat_out,"_wetland.tif")),overwrite=T)
 writeRaster(reach_threat_scaled,file=file.path(out_directory,paste0(threat_out,"_reach.tif")),overwrite=T)
 
-##combinations of impacts (asset types X curve types)
-
+##Create generic 'Impact' maps: one for each curve-shape X asset type combination. 
+##These will be multiplied by HDMs according to lookup table
+##Eventually this section could be replaced with species-specific curves.
+#
+#Loop through types and generic curve shapes
 for(wettype in c(2,4)){
   for(reachtype in c(2,4)){
     esttype=2
@@ -107,7 +83,7 @@ writeRaster(threat_as_cond,file=file.path(out_directory,"ConditionLayers",paste0
 }}
 
 #########################################################################################
-## Clip all the HDMs selected earlier (in filenames) to the wetlands, 
+## Clip all the HDMs to the waterbody mask 
 ########################################################################################
 
 
@@ -117,7 +93,7 @@ library(doParallel)
 
 wbody_rast=rast("O:/SAN_Projects/WaterwaysValuesThreats/Waterway Risk Pilot/Data/Waterbodies_raster.tif")>0
 
-feature_in_directory <- "O:/SAN_Projects/Wetland_HDMs/cropped_and_maskedOriginal_models/MaskedWetlandSppBig"
+feature_in_directory <- "O:/SAN_Projects/WaterwaysValuesThreats/HDMs_masked/"
 filenames=list.files(feature_in_directory,pattern=".tif$")
 outnames=gsub("Masked_","",filenames)
 hdm_out_directory <-"O:/SAN_Projects/WaterwaysValuesThreats/Waterway Risk Pilot/Data/HDMs"
@@ -153,7 +129,7 @@ hdmsums=rbind(hdmsums1,hdmsums)
 
 write.csv(hdmsums,file=file.path(hdm_out_directory,"HDMsums.csv"),row.names=F)
 
-##test hdms
+##test hdms, remove dud HDMs from susequent analyses (or go fix them first)
 hdmfiles=list.files(hdm_out_directory,full.names=T)
 rr=rast(hdmfiles)
 
@@ -165,6 +141,7 @@ hdmfiles=hdmfiles[-dudhdms]
 
 #########################################################################################
 ## Make Z5 feature files that includes groups info as well as location and name of files 
+## Using Zonation to create the species-specific risk layers, via 'condition' layers (condition=impact)
 ##########################################################################################
 
 
