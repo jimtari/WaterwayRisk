@@ -8,12 +8,17 @@ impactcurve<-function(tval,mu=0.5,beta=0.1,M=1,Y=3.5,B=1/(1+exp(mu/beta)),C=(1+e
 
 #function to apply impact curve function to a raster
 
-threatToCond<-function(inval,type=2,mu.val=0.5,beta.val=0.1,M.val=1,Y.val=3.5){
-  if(type==1){mu.val=0;beta.val=0.1;M.val=1;Y.val=3.5}
-  if(type==3){mu.val=1;beta.val=1;M.val=1;Y.val=3.5}
-  if(type==4){mu.val=1;beta.val=0.1;M.val=1;Y.val=3.5}
+threatToCond<-function(inval,mu.val=0.5,beta.val=0.1,M.val=1,Y.val=1){
   impactcurve(tval=inval,mu=mu.val,beta=beta.val,M=M.val,Y=Y.val)
 }
+
+#superseded function with 4 types
+#threatToCond<-function(inval,type=2,mu.val=0.5,beta.val=0.1,M.val=1,Y.val=3.5){
+#  if(type==1){mu.val=0;beta.val=0.1;M.val=1;Y.val=3.5}
+#  if(type==3){mu.val=1;beta.val=1;M.val=1;Y.val=3.5}
+#  if(type==4){mu.val=1;beta.val=0.1;M.val=1;Y.val=3.5}
+#  impactcurve(tval=inval,mu=mu.val,beta=beta.val,M=M.val,Y=Y.val)
+#}
 
 
 
