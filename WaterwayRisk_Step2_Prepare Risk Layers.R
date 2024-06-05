@@ -3,7 +3,7 @@
 ### 1. A threat layer corresponding to a specific threat type
 ### 2. A species list with species information, including HDM locations, thresholds, & group IDs that can be used to look up relevant Threat-Impact curve shapes
 ### 3. An associations file giving the T-I curve parameters for relevant taxon groups.
-### All input rasters (HDMs, threat and mask layers) are assumed to have consistent extents & projections, corresponding to the 'rasterTemplate' specified
+### The names and locations of all inputs are specified in either the Universial settings file, or the Threat-specific settings file, which you must specify below.
 
 ##load packages 
 
@@ -14,51 +14,24 @@ library(terra)
 library(mapview)
 library(prodlim)
 
-##load custom functions
+## Impact curve function
+impactcurve<-function(tval,mu=0.5,beta=0.1,M=1,Y=3.5,B=1/(1+exp(mu/beta)),C=(1+exp(-(1-mu)/beta))/(1-B*(1+exp(-(1-mu)/beta)))){
+  ifelse(tval>=Y, M, M*C*(1/(1+exp(-(tval/Y-mu)/beta))-B))
+}
+## function to apply impact curve function to a raster
+threatToCond<-function(inval,mu.val=0.5,beta.val=0.1,M.val=1,Y.val=1){
+  outval=impactcurve(tval=inval,mu=mu.val,beta=beta.val,M=M.val,Y=Y.val)
+}
 
+
+#Set working directory
 setwd("O:/SAN_Projects/WaterwaysValuesThreats/WaterwayRisk")
 
-source("Functions for waterway risk assessment calculations.R")
+##Load universal settings file (check this file)
+source("WaterwayRisk_UniversalSettingsFile_TestRuns.R")
 
-### universal inputs (species list and associations file): set once for all Threats
-
-splist.full=read.csv("O:/SAN_Projects/WaterwaysValuesThreats/WaterwayRisk/WaterwaySpecies_HDMs_Thresholds.csv")
-#subset species list to relevant species only ('Include' column by default - but could be based on taxon groups or asset types)
-full_list=splist.full%>%subset(Include==1)
-
-#get Associations look up table
-
-associations=read.csv("O:/SAN_Projects/WaterwaysValuesThreats/WaterwayRisk/WaterwaySpecies_ThreatAssociations.csv")
-
-
-##where should risk layers be saved?
-out_directory <-"O:/SAN_Projects/WaterwaysValuesThreats/Waterway Risk Pilot/Data/"
-dir.create(file.path(out_directory,"ConditionLayers"))
-
-##where Zonation run files will be saved
-Zonation_runDir<-"O:/SAN_Projects/WaterwaysValuesThreats/Waterway Risk Pilot/Zonation"
-
-##where Zonation outputs will be saved
-
-Zonation_outDir <-paste(Zonation_runDir,"/Outputs") 
-
-rasterTemplate<-rast("O:/SAN_Projects/WaterwaysValuesThreats/Masks/WaterbodyMask_incEnchee_VicGrid2020.tif")
-
-
-### Threat-Specific Inputs: change for each Threat and Asset type.
-
-asset.type="Wetland" 
-
-threat_assoc_name<-"Reduced inundation hydrological stress"  #name of Threat in associations file
-
-theat_shortName<-"Reduced_Wetland_Inundation"
-
-#name of threat layer, corresponding to a Threat in the associations file
-threat_in <-"O:/SAN_Projects/WaterwaysValuesThreats/Waterway Risk Pilot/Data/HydroStress_wetland_VG20.tif"  
-
-#Set analysis mask layer (could make an asset-specific mask from the threat layer)
-analysisMaskFile<-"O:/SAN_Projects/WaterwaysValuesThreats/Waterway Risk Pilot/Data/Waterbodies_VG20.tif"
-
+##Load Threat-specific settings file (change this file for each Threat and/or variant)
+source("WaterwayRisk_ThreatSettings_WetlandHydro_TestRun.R")
 
 ##### R WORKFLOW STARTS HERE
 
@@ -70,18 +43,25 @@ if(length(grep("s$",asset.type.alts))==0){
   asset.type.alts=c(asset.type.alts,gsub("s$","",asset.type.alts))  
   }
 
-
-### get threat layer
-
-threat_raw <- terra::rast(threat_in)
-compareGeom(threat_raw,rasterTemplate)
-
-# get waterbody mask
+## get waterbody mask
 wbody_rast <- terra::rast(analysisMaskFile)
-compareGeom(wbody_rast,rasterTemplate)
 
-##Threat layer to Impact layers (via impact curve):
-#Create generic 'Impact' maps: one for each curve-shape. 
+## get threat layer
+threat_raw <- terra::rast(threat_in)
+
+#check raster match
+compareGeom(threat_raw,wbody_rast)
+
+##IF ERROR ABOVE, make sure (in this order)
+# 1) the raster specified in 'analysisMaskFile' matches the projection, extent, resolution (and is snapped to):
+# "O:/SAN_Projects/WaterwaysValuesThreats/Asset_layers/Streams_Wetlands_Estuaries_categorical_mask_vg20.tif"
+#  which should match the HDMs etc
+# 2) the raster specific in 'threat_in' matches the raster specified in 'analysisMaskFile'
+# threat_raw<- project(threat_raw,wbody_rast)
+
+##Create Impact layers from the Threat layer, via impact curves:
+##The threat layer should have positive values only, with zero indicating no threat.
+##Make sure the T-I curve parameters correspond to the Threat values in the specified threat layer.
 
 assocs=associations%>%subset(Threat==threat_assoc_name & Asset%in%asset.type.alts)
 
@@ -117,16 +97,18 @@ condLU=data.frame(index=1:length(condlayers),norm=0,filename=condlayers)
 condlink.Name=paste0(runname,"_Impact_CondLinks.txt")
 
 #write condition link file for Zonation: 
-write.table(condLU,file=condlink.Name,names=FALSE,row.names=FALSE,quote=FALSE) #Impact layers
+write.table(condLU,file=condlink.Name,col.names=FALSE,row.names=FALSE,quote=3) #Impact layers
 
 #make a refuge value version
 condLU$filename=gsub("_Impact_","_Refuge_",condLU$filename)
-write.table(condLU,file=gsub("_Impact_","_Refuge_",condlink.Name),names=FALSE,row.names=FALSE,quote=FALSE)
+write.table(condLU,file=gsub("_Impact_","_Refuge_",condlink.Name),col.names=FALSE,row.names=FALSE,quote=3)
 
 ##Make Feature list file
 
-hdmfiles=full_list$WaterwaysHDM
+hdmfiles=file.path(normalHDMs_Dir,basename(full_list$SelectedRaster))
+
 SppNames=full_list$SpeciesName
+threshold=ifelse(is.na(full_list$Threshold),0,full_list$Threshold)
 SppCodes=full_list$TAXON_ID
 
 group=full_list[,paste0(asset.type,"Group")]
@@ -138,10 +120,12 @@ curveNumber=assocs$CurveNumber[match(group,assocs$Group)] #which curve shape (he
 
 conlink=ifelse(is.na(curveNumber),-1,curveNumber)
 
-Feature_list <- data.frame(weight=1, filename=hdmfiles, group=groupnums, condition=conlink,name=SppNames,tr_out=1)
+Feature_list <- data.frame(weight=1, group=groupnums, condition=conlink,threshold=threshold, name=make.unique(SppNames), filename=hdmfiles,tr_out=saveTransformed)
 
 #remove species with no HDM (or VBA buffer) or no Impact curve for this threat
 Feature_list=subset(Feature_list,condition>0 & !is.na(filename))
+
+#check that normalized HDM's exist..
 
 write.table(Feature_list, file=file.path(Zonation_runDir,paste0(runname,"_feature_list.txt")), row.names = F)
 
@@ -168,23 +152,58 @@ write.table(outcol,file=gsub("_settings","_Refugia_settings",sfname),col.names=F
 
 
 ## WRITE BATCH FILE TO RUN RISK and REFUGE ANALYSES
+## using Zonation flags: a = use analysis area mask, b=pre-processing (rwr, richness),w=use weights (but all 1 here)
+## g=use output groups, f=output tansformed layers (=risk layers for each species),
+## c= use Condition (i.e. multiply HDMs by Impact layers, corresponding to relevant TI curve shape and Threat layer)
+## Adding CAZ2 runs to batch file,but commented out
 
+
+runname2=paste0(runname,"_CAZ2")
 
 cat("
 @setlocal
 @PATH=C:\\Program Files (x86)\\Zonation5;%PATH%
 
-z5 -bwgfc --mode=CAZMAX ",
+z5 -abwgfc --mode=CAZMAX ",
     paste(sfname,paste0("Output/",paste0(runname,"_risk"))),"\n
-z5 -bwgfc --mode=CAZMAX ",
-    paste(gsub("_settings","_Refugia_settings",sfname),paste0("Output/",paste0(runname,"_refuge")))
-,file=paste0(runname,"_Zrun.cmd"))
+z5 -abwgfc --mode=CAZMAX ",
+    paste(gsub("_settings","_Refugia_settings",sfname),paste0("Output/",paste0(runname,"_refuge"))),"\n
+#z5 -abwgfc --mode=CAZ2 ",
+    paste(sfname,paste0("Output/",paste0(runname2,"_risk"))),"\n
+#z5 -abwgfc --mode=CAZ2 ",
+    paste(gsub("_settings","_Refugia_settings",sfname),paste0("Output/",paste0(runname2,"_refuge")))
     
+    ,file=paste0(runname,"_Zrun.cmd"))   
+
+##Make a CAZMAX2 version (run serately if needed)
+runname2=paste0(runname,"_CAZ2")
+cat("
+@setlocal
+@PATH=C:\\Program Files (x86)\\Zonation5;%PATH%
+
+z5 -abwgfc --mode=CAZ2 ",
+    paste(sfname,paste0("Output/",paste0(runname2,"_risk"))),"\n
+z5 -abwgfc --mode=CAZ2 ",
+    paste(gsub("_settings","_Refugia_settings",sfname),paste0("Output/",paste0(runname2,"_refuge")))
+    ,file=paste0(runname,"_Zrun.cmd"))
+    
+## CHECK THAT ALL HDMs IN FEATURE LIST EXIST: ZONATION WILL NOT RUN IF ANY MISSING
+missing.hdms=Feature_list$filename[!file.exists(Feature_list$filename)]
+
+if(length(missing.hdms)>0){
+  print("Missing HDMs")
+  print(missing.hdms)
+  warning("The Normalized HDMs listed above do not exist. Zonation will not run.")
+}
+
+
 
 # RUN ZONATION 
 # NB THIS R SESSION WILL NOT BE USEABLE WHILE ZONATION IS RUNNING. DOUBLE CLICK ON THE .cmd file created above to run Z outside of R)
+# Make sure Sei (or wherever running) is not already running Zonation or other memory hungry apps. 
 
-system2(paste0(runname,"_Zrun.cmd"))
+
+#system2(paste0(runname,"_Zrun.cmd"))   #Runs Zonation in R 
 
 
 
